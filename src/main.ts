@@ -7,10 +7,16 @@ const MAX_PASTE_LENGTH = 4000;
 
 export default class ClaudeTerminalPlugin extends Plugin {
 	settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
+	private lastFocusedTerminal: TerminalView | null = null;
 
 	/** Absolute path to this plugin's install directory */
 	get pluginDir(): string {
 		return (this.app.vault.adapter as any).basePath + "/.obsidian/plugins/" + this.manifest.id;
+	}
+
+	/** Called by TerminalView when it receives focus/input */
+	setLastFocusedTerminal(view: TerminalView) {
+		this.lastFocusedTerminal = view;
 	}
 
 	async onload() {
@@ -25,6 +31,13 @@ export default class ClaudeTerminalPlugin extends Plugin {
 			name: "Open terminal",
 			callback: () => this.activateView(),
 		});
+
+		this.addCommand({
+			id: "new-terminal",
+			name: "Open new terminal",
+			callback: () => this.openNewTerminal(),
+		});
+
 
 		this.addCommand({
 			id: "add-current-note",
@@ -201,30 +214,44 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
 	async activateView() {
 		const { workspace } = this.app;
-
-		let leaf: WorkspaceLeaf | null = null;
 		const leaves = workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
 
 		if (leaves.length > 0) {
-			leaf = leaves[0];
+			// Reveal the last-focused terminal, or fall back to the first one
+			const target = this.lastFocusedTerminal
+				? leaves.find((l) => l.view === this.lastFocusedTerminal) ?? leaves[0]
+				: leaves[0];
+			workspace.revealLeaf(target);
 		} else {
-			leaf = workspace.getRightLeaf(false);
+			const leaf = workspace.getRightLeaf(false);
 			if (leaf) {
 				await leaf.setViewState({ type: VIEW_TYPE_TERMINAL, active: true });
+				workspace.revealLeaf(leaf);
 			}
 		}
+	}
 
+	async openNewTerminal() {
+		const { workspace } = this.app;
+		const leaf = workspace.getRightLeaf(false);
 		if (leaf) {
+			await leaf.setViewState({ type: VIEW_TYPE_TERMINAL, active: true });
 			workspace.revealLeaf(leaf);
 		}
 	}
 
 	getTerminalView(): TerminalView | null {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
-		if (leaves.length > 0) {
-			return leaves[0].view as TerminalView;
+		if (leaves.length === 0) return null;
+
+		// Return last-focused terminal if it's still alive
+		if (this.lastFocusedTerminal) {
+			const match = leaves.find((l) => l.view === this.lastFocusedTerminal);
+			if (match) return this.lastFocusedTerminal;
+			this.lastFocusedTerminal = null;
 		}
-		return null;
+
+		return leaves[0].view as TerminalView;
 	}
 
 	restartSession() {

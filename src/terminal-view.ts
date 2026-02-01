@@ -16,6 +16,7 @@ export class TerminalView extends ItemView {
 	private plugin: ClaudeTerminalPlugin;
 	/** Disposable for the terminal.onData listener (keyboard → PTY) */
 	private inputDisposable: IDisposable | null = null;
+	private focusDisposable: IDisposable | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeTerminalPlugin) {
 		super(leaf);
@@ -130,6 +131,15 @@ export class TerminalView extends ItemView {
 
 		this.terminal.open(this.terminalContainer);
 
+		// Track focus so the plugin knows which terminal was last active
+		this.focusDisposable = this.terminal.onData(() => {
+			this.plugin.setLastFocusedTerminal(this);
+		});
+		// Also track on initial click/focus of the xterm element
+		this.terminalContainer.addEventListener("focus", () => {
+			this.plugin.setLastFocusedTerminal(this);
+		}, true);
+
 		// Wait for the container to have real dimensions, then fit and spawn.
 		const waitForLayout = () => {
 			const rect = this.terminalContainer?.getBoundingClientRect();
@@ -207,6 +217,8 @@ export class TerminalView extends ItemView {
 	private disposeTerminal() {
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = null;
+		this.focusDisposable?.dispose();
+		this.focusDisposable = null;
 		this.inputDisposable?.dispose();
 		this.inputDisposable = null;
 		this.ptyManager?.kill();
