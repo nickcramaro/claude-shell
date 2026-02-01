@@ -143,6 +143,18 @@ export default class ClaudeTerminalPlugin extends Plugin {
 		this.addRibbonIcon("sparkles", "Claude Shell", () => this.activateView());
 
 		this.addSettingTab(new ClaudeTerminalSettingTab(this.app, this));
+
+		// Clear stale last-focused reference when layout changes
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => {
+				if (this.lastFocusedTerminal) {
+					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
+					if (!leaves.some((l: WorkspaceLeaf) => l.view === this.lastFocusedTerminal)) {
+						this.lastFocusedTerminal = null;
+					}
+				}
+			}),
+		);
 	}
 
 	async onunload() {

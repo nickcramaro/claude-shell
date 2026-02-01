@@ -1,6 +1,14 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type ClaudeTerminalPlugin from "./main";
 
+function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): T {
+	let timer: ReturnType<typeof setTimeout>;
+	return ((...args: any[]) => {
+		clearTimeout(timer);
+		timer = setTimeout(() => fn(...args), ms);
+	}) as any;
+}
+
 export class ClaudeTerminalSettingTab extends PluginSettingTab {
 	plugin: ClaudeTerminalPlugin;
 
@@ -13,6 +21,8 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		const debouncedSave = debounce(() => this.plugin.saveSettings(), 500);
+
 		new Setting(containerEl)
 			.setName("Claude flags")
 			.setDesc("Extra flags passed to claude CLI (e.g. --model opus --allowedTools)")
@@ -20,9 +30,9 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder("--model opus")
 					.setValue(this.plugin.settings.claudeFlags)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.claudeFlags = value;
-						await this.plugin.saveSettings();
+						debouncedSave();
 					})
 			);
 
@@ -33,9 +43,9 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder("/bin/zsh")
 					.setValue(this.plugin.settings.shellPath)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.shellPath = value;
-						await this.plugin.saveSettings();
+						debouncedSave();
 					})
 			);
 
@@ -89,9 +99,9 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder("#1e1e2e")
 					.setValue(this.plugin.settings.theme.background)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.theme.background = value;
-						await this.plugin.saveSettings();
+						debouncedSave();
 					})
 			);
 
@@ -101,9 +111,9 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder("#cdd6f4")
 					.setValue(this.plugin.settings.theme.foreground)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.theme.foreground = value;
-						await this.plugin.saveSettings();
+						debouncedSave();
 					})
 			);
 
@@ -113,9 +123,9 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder("#f5e0dc")
 					.setValue(this.plugin.settings.theme.cursor)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.theme.cursor = value;
-						await this.plugin.saveSettings();
+						debouncedSave();
 					})
 			);
 	}
