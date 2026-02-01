@@ -173,7 +173,7 @@ export class PtyManager {
  * - Bracketed paste mode (CSI ? 2004 h/l) — not needed in embedded terminal
  * - ConEmu progress (OSC 9;4;0; ST)
  */
-function stripUnsupportedSequences(data: string): string {
+export function stripUnsupportedSequences(data: string): string {
 	return data.replace(
 		/\x1b\[[<>?][0-9;]*u|\x1b\[\?(?:2026|1004|2004)[hl]|\x1b\]9;4;0;\x07?/g,
 		""
