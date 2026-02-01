@@ -12,6 +12,7 @@
 		"isolatedModules": true,
 		"strictNullChecks": true,
 		"lib": ["DOM", "ES2020"],
+		"types": ["vitest/globals"],
 		"outDir": "./dist",
 		"paths": {
 			"@/*": ["src/*"]
