@@ -196,6 +196,7 @@ export class TerminalView extends ItemView {
 				rows: this.terminal.rows,
 				pluginDir: this.plugin.pluginDir,
 				command,
+				resolvedPath: this.plugin.resolvedPath || undefined,
 			});
 		} catch (err) {
 			this.terminal.writeln(`\r\n\x1b[31mFailed to spawn terminal: ${err}\x1b[0m`);

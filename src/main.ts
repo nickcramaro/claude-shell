@@ -2,12 +2,14 @@ import { Plugin, WorkspaceLeaf, TFile, MarkdownView, Editor, Menu } from "obsidi
 import { VIEW_TYPE_TERMINAL, DEFAULT_SETTINGS, ClaudeTerminalSettings } from "./constants";
 import { TerminalView } from "./terminal-view";
 import { ClaudeTerminalSettingTab } from "./settings";
+import { resolveUserPath } from "./pty-manager";
 
 const MAX_PASTE_LENGTH = 4000;
 
 export default class ClaudeTerminalPlugin extends Plugin {
 	settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
 	private lastFocusedTerminal: TerminalView | null = null;
+	resolvedPath: string = "";
 
 	/** Absolute path to this plugin's install directory */
 	get pluginDir(): string {
@@ -21,6 +23,9 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+
+		// Resolve user PATH asynchronously once at startup (cached for all terminals)
+		this.resolvedPath = await resolveUserPath(this.settings.shellPath || undefined);
 
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
 

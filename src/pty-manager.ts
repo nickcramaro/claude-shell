@@ -1,14 +1,17 @@
 import { Platform } from "obsidian";
 import * as path from "path";
+import { parseCommand } from "./parse-command";
 
-interface SpawnOptions {
+export interface SpawnOptions {
 	shellPath?: string;
 	cwd: string;
 	cols: number;
 	rows: number;
 	pluginDir: string;
-	/** If set, launch this command directly via shell -c (skipping rc files) */
+	/** If set, launch this command directly (skipping rc files) */
 	command?: string;
+	/** Pre-resolved user PATH. If omitted, uses process.env.PATH fallback. */
+	resolvedPath?: string;
 }
 
 type DataCallback = (data: string) => void;
@@ -23,27 +26,19 @@ export class PtyManager {
 		// node-pty must be required at runtime (native module, not bundled)
 		const nodePty = requireNodePty(options.pluginDir);
 
-		const shell = options.shellPath || this.detectShell();
-
-		// Obsidian's process.env.PATH is minimal (no .zshrc/.bashrc additions).
-		// Resolve the user's full PATH by asking their login shell.
-		const uniquePath = this.resolveUserPath();
+		const shell = options.shellPath || detectShell();
 
 		const env = Object.assign({}, process.env, {
 			TERM: "xterm-256color",
 			COLORTERM: "truecolor",
-			PATH: uniquePath,
+			PATH: options.resolvedPath || buildFallbackPath(),
 			// Tell Claude Code we're xterm-based so it doesn't enable the
 			// Kitty keyboard protocol (which xterm.js doesn't support).
-			// Without this, Claude Code sends CSI > 1 u sequences that
-			// corrupt xterm.js's escape parser and garble box-drawing chars.
 			TERM_PROGRAM: "xterm",
 		});
 
 		if (options.command) {
-			// Spawn the command directly — no shell, no prompt, no rc files.
-			// Parse command into binary + args.
-			const parts = options.command.split(/\s+/);
+			const parts = parseCommand(options.command);
 			const bin = parts[0];
 			const args = parts.slice(1);
 
@@ -55,7 +50,6 @@ export class PtyManager {
 				env,
 			});
 		} else {
-			// Interactive shell mode (no auto-launch)
 			this.pty = nodePty.spawn(shell, [], {
 				name: "xterm-256color",
 				cols: options.cols,
@@ -66,8 +60,6 @@ export class PtyManager {
 		}
 
 		this.pty.onData((data: string) => {
-			// Strip escape sequences that xterm.js doesn't support.
-			// See https://github.com/xtermjs/xterm.js/issues/4198
 			const cleaned = stripUnsupportedSequences(data);
 			if (cleaned.length === 0) return;
 			for (const cb of this.dataCallbacks) {
@@ -116,62 +108,77 @@ export class PtyManager {
 	sendCommand(cmd: string) {
 		this.write(cmd + "\r");
 	}
-
-	/**
-	 * Get the user's full PATH by asking their login shell.
-	 * Falls back to a hardcoded list if the shell query fails.
-	 */
-	private resolveUserPath(): string {
-		const shell = this.detectShell();
-		try {
-			const { execSync } = require("child_process");
-			const result = execSync(`${shell} -l -i -c 'echo $PATH'`, {
-				timeout: 3000,
-				encoding: "utf-8",
-				env: { HOME: process.env.HOME, USER: process.env.USER },
-			}).trim();
-			if (result) return result;
-		} catch {
-			// Fall through to hardcoded paths
-		}
-
-		const home = process.env.HOME || "";
-		const extras = [
-			path.join(home, ".local", "bin"),
-			path.join(home, ".bun", "bin"),
-			"/usr/local/bin",
-			"/opt/homebrew/bin",
-			"/opt/homebrew/sbin",
-			path.join(home, ".nvm", "versions", "node"),
-			path.join(home, ".npm-global", "bin"),
-			path.join(home, "bin"),
-		];
-		const current = process.env.PATH || "/usr/bin:/bin";
-		return [...new Set([...extras, ...current.split(":")])].filter(Boolean).join(":");
-	}
-
-	private detectShell(): string {
-		if (Platform.isMacOS) {
-			return process.env.SHELL || "/bin/zsh";
-		}
-		if (Platform.isLinux) {
-			return process.env.SHELL || "/bin/bash";
-		}
-		// Windows
-		return process.env.COMSPEC || "cmd.exe";
-	}
 }
+
+// --- PATH resolution ---
+
+let cachedUserPath: string | null = null;
+
+/**
+ * Resolve the user's full PATH asynchronously by querying their login shell.
+ * Result is cached — subsequent calls return immediately.
+ */
+export async function resolveUserPath(shellOverride?: string): Promise<string> {
+	if (cachedUserPath) return cachedUserPath;
+
+	const shell = shellOverride || detectShell();
+	try {
+		const { execFile } = require("child_process");
+		const { promisify } = require("util");
+		const execFileAsync = promisify(execFile);
+		// Use -l (login) only — no -i (interactive) to avoid prompts/hangs
+		const { stdout } = await execFileAsync(shell, ["-l", "-c", "echo $PATH"], {
+			timeout: 3000,
+			env: { HOME: process.env.HOME, USER: process.env.USER },
+		});
+		const result = (stdout as string).trim();
+		if (result) {
+			cachedUserPath = result;
+			return result;
+		}
+	} catch {
+		// Fall through to hardcoded paths
+	}
+
+	cachedUserPath = buildFallbackPath();
+	return cachedUserPath;
+}
+
+/** Clear the cached PATH (for testing) */
+export function clearPathCache() {
+	cachedUserPath = null;
+}
+
+export function buildFallbackPath(): string {
+	const home = process.env.HOME || "";
+	const extras = [
+		path.join(home, ".local", "bin"),
+		path.join(home, ".bun", "bin"),
+		"/usr/local/bin",
+		"/opt/homebrew/bin",
+		"/opt/homebrew/sbin",
+		path.join(home, ".npm-global", "bin"),
+		path.join(home, "bin"),
+	];
+	const current = process.env.PATH || "/usr/bin:/bin";
+	return [...new Set([...extras, ...current.split(":")])].filter(Boolean).join(":");
+}
+
+export function detectShell(): string {
+	if (Platform.isMacOS) {
+		return process.env.SHELL || "/bin/zsh";
+	}
+	if (Platform.isLinux) {
+		return process.env.SHELL || "/bin/bash";
+	}
+	// Windows
+	return process.env.COMSPEC || "cmd.exe";
+}
+
+// --- Escape sequence handling ---
 
 /**
  * Strip escape sequences that xterm.js doesn't handle well.
- *
- * - Kitty keyboard protocol (CSI > Ps u, CSI < u, CSI ? u)
- * - Synchronized output (CSI ? 2026 h/l)
- * - Focus event reporting (CSI ? 1004 h/l) — prevents feedback loop where
- *   xterm.js sends focus events back to the PTY during Obsidian layout,
- *   causing garbled output
- * - Bracketed paste mode (CSI ? 2004 h/l) — not needed in embedded terminal
- * - ConEmu progress (OSC 9;4;0; ST)
  */
 export function stripUnsupportedSequences(data: string): string {
 	return data.replace(
@@ -181,8 +188,6 @@ export function stripUnsupportedSequences(data: string): string {
 }
 
 function requireNodePty(pluginDir: string) {
-	// Obsidian's require() doesn't search plugin node_modules,
-	// so we must use an absolute path to the native module.
 	const modulePath = path.join(pluginDir, "node_modules", "node-pty");
 	try {
 		return require(modulePath);
