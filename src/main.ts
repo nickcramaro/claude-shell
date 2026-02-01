@@ -134,35 +134,28 @@ export default class ClaudeTerminalPlugin extends Plugin {
 	// --- Core context methods ---
 
 	/**
-	 * Add files to Claude's context via /add commands.
-	 * Sends each path with a small delay so Claude Code can process them.
+	 * Add files to Claude's context by sending @path references.
+	 * Claude Code uses @ mentions for file context, not /add.
 	 */
 	addFiles(paths: string[]) {
 		this.ensureTerminal((view) => {
-			paths.forEach((p, i) => {
-				setTimeout(() => view.sendToTerminal(`/add ${p}`), i * 200);
-			});
+			const message = paths.length === 1
+				? `Read @${paths[0]}`
+				: `Read these files: ${paths.map((p) => `@${p}`).join(" ")}`;
+			view.sendToTerminal(message);
 		});
 	}
 
 	/**
 	 * Paste selected text into the terminal as a message.
-	 * Large selections are written to a temp file and /add'd instead.
+	 * Large selections reference the file instead of pasting inline.
 	 */
 	sendSelection(text: string, sourcePath?: string, lineRange?: [number, number]) {
-		if (text.length > MAX_PASTE_LENGTH) {
-			// Too large to paste — write temp file and /add it
-			const tmpPath = `.obsidian/plugins/${this.manifest.id}/selection.tmp.md`;
-			const header = sourcePath
-				? `> From ${sourcePath}${lineRange ? ` (lines ${lineRange[0]}-${lineRange[1]})` : ""}\n\n`
-				: "";
-			this.app.vault.adapter.write(
-				tmpPath,
-				header + text,
-			).then(() => {
-				this.ensureTerminal((view) => {
-					view.sendToTerminal(`/add ${tmpPath}`);
-				});
+		if (text.length > MAX_PASTE_LENGTH && sourcePath) {
+			// Too large to paste — reference the file instead
+			const loc = lineRange ? ` lines ${lineRange[0]}-${lineRange[1]}` : "";
+			this.ensureTerminal((view) => {
+				view.sendToTerminal(`Read @${sourcePath}${loc}`);
 			});
 			return;
 		}
