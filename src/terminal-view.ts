@@ -69,29 +69,37 @@ export class TerminalView extends ItemView {
 		this.disposeTerminal();
 
 		const settings = this.plugin.settings;
-		const obsidianDark = document.body.classList.contains("theme-dark");
+
+		// Read Obsidian's active theme colors via CSS variables so the
+		// terminal matches whatever theme the user has installed.
+		const cs = getComputedStyle(document.body);
+		const cv = (v: string) => cs.getPropertyValue(v).trim();
+
+		const bg = settings.theme.background || cv("--background-primary") || "#1e1e2e";
+		const fg = settings.theme.foreground || cv("--text-normal") || "#cdd6f4";
+		const cursor = settings.theme.cursor || cv("--text-accent") || "#f5e0dc";
 
 		const theme = {
-			background: settings.theme.background || (obsidianDark ? "#1e1e2e" : "#ffffff"),
-			foreground: settings.theme.foreground || (obsidianDark ? "#cdd6f4" : "#1e1e2e"),
-			cursor: settings.theme.cursor || (obsidianDark ? "#f5e0dc" : "#1e1e2e"),
-			selectionBackground: obsidianDark ? "#45475a" : "#d0d0d0",
-			black: obsidianDark ? "#45475a" : "#000000",
-			red: obsidianDark ? "#f38ba8" : "#cc0000",
-			green: obsidianDark ? "#a6e3a1" : "#00cc00",
-			yellow: obsidianDark ? "#f9e2af" : "#cccc00",
-			blue: obsidianDark ? "#89b4fa" : "#0000cc",
-			magenta: obsidianDark ? "#f5c2e7" : "#cc00cc",
-			cyan: obsidianDark ? "#94e2d5" : "#00cccc",
-			white: obsidianDark ? "#bac2de" : "#cccccc",
-			brightBlack: obsidianDark ? "#585b70" : "#666666",
-			brightRed: obsidianDark ? "#f38ba8" : "#ff0000",
-			brightGreen: obsidianDark ? "#a6e3a1" : "#00ff00",
-			brightYellow: obsidianDark ? "#f9e2af" : "#ffff00",
-			brightBlue: obsidianDark ? "#89b4fa" : "#0000ff",
-			brightMagenta: obsidianDark ? "#f5c2e7" : "#ff00ff",
-			brightCyan: obsidianDark ? "#94e2d5" : "#00ffff",
-			brightWhite: obsidianDark ? "#a6adc8" : "#ffffff",
+			background: bg,
+			foreground: fg,
+			cursor: cursor,
+			selectionBackground: cv("--text-selection") || "#45475a",
+			black: cv("--color-base-00") || "#000000",
+			red: cv("--color-red") || "#f38ba8",
+			green: cv("--color-green") || "#a6e3a1",
+			yellow: cv("--color-yellow") || "#f9e2af",
+			blue: cv("--color-blue") || "#89b4fa",
+			magenta: cv("--color-purple") || "#f5c2e7",
+			cyan: cv("--color-cyan") || "#94e2d5",
+			white: cv("--color-base-70") || "#bac2de",
+			brightBlack: cv("--color-base-30") || "#585b70",
+			brightRed: cv("--color-red") || "#f38ba8",
+			brightGreen: cv("--color-green") || "#a6e3a1",
+			brightYellow: cv("--color-yellow") || "#f9e2af",
+			brightBlue: cv("--color-blue") || "#89b4fa",
+			brightMagenta: cv("--color-purple") || "#f5c2e7",
+			brightCyan: cv("--color-cyan") || "#94e2d5",
+			brightWhite: cv("--color-base-100") || "#ffffff",
 		};
 
 		this.terminal = new Terminal({

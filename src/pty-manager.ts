@@ -78,10 +78,9 @@ export class PtyManager {
 		}
 
 		this.pty.onData((data: string) => {
-			// Strip Kitty keyboard protocol sequences that xterm.js doesn't support.
-			// Claude Code sends these at startup; xterm.js misparses them, corrupting
-			// the display. See https://github.com/xtermjs/xterm.js/issues/4198
-			const cleaned = stripKittySequences(data);
+			// Strip escape sequences that xterm.js doesn't support.
+			// See https://github.com/xtermjs/xterm.js/issues/4198
+			const cleaned = stripUnsupportedSequences(data);
 			if (cleaned.length === 0) return;
 			for (const cb of this.dataCallbacks) {
 				cb(cleaned);
@@ -143,21 +142,19 @@ export class PtyManager {
 }
 
 /**
- * Strip Kitty keyboard protocol escape sequences.
- * These are CSI sequences ending in 'u' with specific intermediate bytes:
- *   CSI > Ps u    (push mode)
- *   CSI < u       (pop mode)
- *   CSI ? u       (query mode)
- *   CSI > Ps;Ps u (push with flags)
- * Also strip the synchronized output sequences (CSI ? 2026 h/l)
- * which Claude Code uses but older xterm.js may not fully support.
+ * Strip escape sequences that xterm.js doesn't handle well.
+ *
+ * - Kitty keyboard protocol (CSI > Ps u, CSI < u, CSI ? u)
+ * - Synchronized output (CSI ? 2026 h/l)
+ * - Focus event reporting (CSI ? 1004 h/l) — prevents feedback loop where
+ *   xterm.js sends focus events back to the PTY during Obsidian layout,
+ *   causing garbled output
+ * - Bracketed paste mode (CSI ? 2004 h/l) — not needed in embedded terminal
+ * - ConEmu progress (OSC 9;4;0; ST)
  */
-function stripKittySequences(data: string): string {
-	// Match ESC[ followed by optional >/</? then digits/semicolons then u
-	// Also match CSI ? 2026 h and CSI ? 2026 l (synchronized output)
-	// Also match OSC 9;4;0; ST (ConEmu progress)
+function stripUnsupportedSequences(data: string): string {
 	return data.replace(
-		/\x1b\[[<>?][0-9;]*u|\x1b\[\?2026[hl]|\x1b\]9;4;0;\x07?/g,
+		/\x1b\[[<>?][0-9;]*u|\x1b\[\?(?:2026|1004|2004)[hl]|\x1b\]9;4;0;\x07?/g,
 		""
 	);
 }
