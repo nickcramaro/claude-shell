@@ -240,7 +240,16 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
 	async openNewTerminal() {
 		const { workspace } = this.app;
-		const leaf = workspace.getRightLeaf(false);
+		const existingLeaves = workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
+
+		let leaf: WorkspaceLeaf | null;
+		if (existingLeaves.length > 0) {
+			// Create a new tab alongside existing terminals
+			leaf = workspace.createLeafBySplit(existingLeaves[existingLeaves.length - 1]);
+		} else {
+			leaf = workspace.getRightLeaf(false);
+		}
+
 		if (leaf) {
 			await leaf.setViewState({ type: VIEW_TYPE_TERMINAL, active: true });
 			workspace.revealLeaf(leaf);
