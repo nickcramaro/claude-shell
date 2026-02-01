@@ -199,21 +199,23 @@ export default class ClaudeTerminalPlugin extends Plugin {
 	private ensureTerminal(cb: (view: TerminalView) => void) {
 		const view = this.getTerminalView();
 		if (view) {
-			cb(view);
-			if (this.settings.focusTerminalOnContext) {
-				this.activateView();
-				view.focusTerminal();
-			}
+			view.ready.then(() => {
+				cb(view);
+				if (this.settings.focusTerminalOnContext) {
+					this.activateView();
+					view.focusTerminal();
+				}
+			});
 			return;
 		}
 		this.activateView().then(() => {
-			setTimeout(() => {
-				const v = this.getTerminalView();
-				if (v) {
+			const v = this.getTerminalView();
+			if (v) {
+				v.ready.then(() => {
 					cb(v);
 					if (this.settings.focusTerminalOnContext) v.focusTerminal();
-				}
-			}, 1000);
+				});
+			}
 		});
 	}
 

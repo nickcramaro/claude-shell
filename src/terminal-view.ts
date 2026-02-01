@@ -7,20 +7,30 @@ import { VIEW_TYPE_TERMINAL } from "./constants";
 import { PtyManager } from "./pty-manager";
 import type ClaudeTerminalPlugin from "./main";
 
+const MAX_LAYOUT_RETRIES = 200; // ~3.3s at 60fps
+
 export class TerminalView extends ItemView {
 	private terminal: Terminal | null = null;
 	private fitAddon: FitAddon | null = null;
 	private ptyManager: PtyManager | null = null;
 	private resizeObserver: ResizeObserver | null = null;
+	private resizeDisposable: IDisposable | null = null;
 	private terminalContainer: HTMLElement | null = null;
 	private plugin: ClaudeTerminalPlugin;
-	/** Disposable for the terminal.onData listener (keyboard → PTY) */
 	private inputDisposable: IDisposable | null = null;
 	private focusDisposable: IDisposable | null = null;
+	private abortController: AbortController | null = null;
+	private waitForLayoutId: number | null = null;
+
+	private _readyResolve: (() => void) | null = null;
+	readonly ready: Promise<void>;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeTerminalPlugin) {
 		super(leaf);
 		this.plugin = plugin;
+		this.ready = new Promise<void>((resolve) => {
+			this._readyResolve = resolve;
+		});
 	}
 
 	getViewType(): string {
@@ -36,39 +46,11 @@ export class TerminalView extends ItemView {
 	}
 
 	async onOpen() {
-		const container = this.containerEl.children[1] as HTMLElement;
+		const container = this.contentEl;
 		container.empty();
 		container.addClass("claude-terminal-container");
 
 		this.terminalContainer = container.createDiv({ cls: "claude-terminal-xterm" });
-
-		// Drag-and-drop: accept files dragged from file explorer
-		this.terminalContainer.addEventListener("dragover", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			this.terminalContainer?.addClass("claude-terminal-drop-active");
-		});
-
-		this.terminalContainer.addEventListener("dragleave", () => {
-			this.terminalContainer?.removeClass("claude-terminal-drop-active");
-		});
-
-		this.terminalContainer.addEventListener("drop", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			this.terminalContainer?.removeClass("claude-terminal-drop-active");
-
-			// Obsidian encodes dragged files in the dataTransfer
-			const files = (this.app as any).dragManager?.draggable?.files as string[] | undefined;
-			const dragData = e.dataTransfer?.getData("text/plain");
-
-			if (files && files.length > 0) {
-				this.plugin.addFiles(files);
-			} else if (dragData) {
-				// Fallback: treat plain text drag data as a file path
-				this.plugin.addFiles([dragData]);
-			}
-		});
 
 		this.initTerminal();
 	}
@@ -79,10 +61,12 @@ export class TerminalView extends ItemView {
 		// Clean up any previous terminal (e.g. if onOpen is called twice)
 		this.disposeTerminal();
 
+		this.abortController = new AbortController();
+		const { signal } = this.abortController;
+
 		const settings = this.plugin.settings;
 
-		// Read Obsidian's active theme colors via CSS variables so the
-		// terminal matches whatever theme the user has installed.
+		// Read Obsidian's active theme colors via CSS variables
 		const cs = getComputedStyle(document.body);
 		const cv = (v: string) => cs.getPropertyValue(v).trim();
 
@@ -135,23 +119,55 @@ export class TerminalView extends ItemView {
 		this.focusDisposable = this.terminal.onData(() => {
 			this.plugin.setLastFocusedTerminal(this);
 		});
-		// Also track on initial click/focus of the xterm element
 		this.terminalContainer.addEventListener("focus", () => {
 			this.plugin.setLastFocusedTerminal(this);
-		}, true);
+		}, { capture: true, signal });
+
+		// Drag-and-drop: accept files dragged from file explorer
+		this.terminalContainer.addEventListener("dragover", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this.terminalContainer?.addClass("claude-terminal-drop-active");
+		}, { signal });
+
+		this.terminalContainer.addEventListener("dragleave", () => {
+			this.terminalContainer?.removeClass("claude-terminal-drop-active");
+		}, { signal });
+
+		this.terminalContainer.addEventListener("drop", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this.terminalContainer?.removeClass("claude-terminal-drop-active");
+
+			const files = (this.app as any).dragManager?.draggable?.files as string[] | undefined;
+			const dragData = e.dataTransfer?.getData("text/plain");
+
+			if (files && files.length > 0) {
+				this.plugin.addFiles(files);
+			} else if (dragData) {
+				this.plugin.addFiles([dragData]);
+			}
+		}, { signal });
 
 		// Wait for the container to have real dimensions, then fit and spawn.
+		let retries = 0;
 		const waitForLayout = () => {
-			const rect = this.terminalContainer?.getBoundingClientRect();
-			if (rect && rect.width > 0 && rect.height > 0) {
+			if (!this.terminalContainer || !this.terminal) return; // closed during wait
+			const rect = this.terminalContainer.getBoundingClientRect();
+			if (rect.width > 0 && rect.height > 0) {
+				this.waitForLayoutId = null;
 				this.fitAddon?.fit();
 				this.spawnPty();
 				this.startResizeObserver();
+			} else if (retries++ < MAX_LAYOUT_RETRIES) {
+				this.waitForLayoutId = requestAnimationFrame(waitForLayout);
 			} else {
-				requestAnimationFrame(waitForLayout);
+				this.waitForLayoutId = null;
+				console.warn("obsidian-shell: terminal container never acquired dimensions");
+				this._readyResolve?.();
 			}
 		};
-		requestAnimationFrame(waitForLayout);
+		this.waitForLayoutId = requestAnimationFrame(waitForLayout);
 	}
 
 	private startResizeObserver() {
@@ -164,7 +180,7 @@ export class TerminalView extends ItemView {
 		});
 		this.resizeObserver.observe(this.terminalContainer);
 
-		this.terminal.onResize(({ cols, rows }) => {
+		this.resizeDisposable = this.terminal.onResize(({ cols, rows }) => {
 			this.ptyManager?.resize(cols, rows);
 		});
 	}
@@ -201,6 +217,7 @@ export class TerminalView extends ItemView {
 		} catch (err) {
 			this.terminal.writeln(`\r\n\x1b[31mFailed to spawn terminal: ${err}\x1b[0m`);
 			this.terminal.writeln("\x1b[33mMake sure node-pty is properly built for Obsidian's Electron.\x1b[0m");
+			this._readyResolve?.();
 			return;
 		}
 
@@ -213,11 +230,21 @@ export class TerminalView extends ItemView {
 		this.inputDisposable = this.terminal.onData((data) => {
 			this.ptyManager?.write(data);
 		});
+
+		this._readyResolve?.();
 	}
 
 	private disposeTerminal() {
+		if (this.waitForLayoutId !== null) {
+			cancelAnimationFrame(this.waitForLayoutId);
+			this.waitForLayoutId = null;
+		}
+		this.abortController?.abort();
+		this.abortController = null;
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = null;
+		this.resizeDisposable?.dispose();
+		this.resizeDisposable = null;
 		this.focusDisposable?.dispose();
 		this.focusDisposable = null;
 		this.inputDisposable?.dispose();
