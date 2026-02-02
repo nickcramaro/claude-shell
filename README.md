@@ -54,6 +54,14 @@ Open multiple terminal tabs with the "Open new terminal" command. Context is sen
 
 This plugin requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be installed and available on your PATH.
 
+### Manual install (from release)
+
+1. Download `main.js`, `styles.css`, and `manifest.json` from the [latest release](https://github.com/nickcramaro/claude-shell/releases/latest)
+2. Create a folder in your vault: `<vault>/.obsidian/plugins/claude-shell/`
+3. Copy the three downloaded files into that folder
+4. Restart Obsidian (or reload without cache: `Cmd+Shift+R`)
+5. Enable "Claude Shell" in Settings → Community Plugins
+
 ### From source
 
 ```bash
