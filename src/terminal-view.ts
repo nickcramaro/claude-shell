@@ -102,13 +102,21 @@ export class TerminalView extends ItemView {
 		const probe = document.body.createEl("span", {
 			attr: { style: "font-family: var(--font-monospace, var(--font-monospace-default)); position: absolute; visibility: hidden;" },
 		});
-		const monospaceFont =
-			getComputedStyle(probe).fontFamily || "Menlo, monospace";
+		const obsidianFont =
+			getComputedStyle(probe).fontFamily || "monospace";
 		probe.remove();
+
+		const terminalFont = obsidianFont;
+
+		// Set the container background to match the terminal so padding areas
+		// don't show the default leaf background colour.
+		this.terminalContainer.style.backgroundColor = bg;
 
 		this.terminal = new Terminal({
 			fontSize: settings.fontSize,
-			fontFamily: monospaceFont,
+			fontFamily: terminalFont,
+			fontWeight: "300",
+			fontWeightBold: "normal",
 			theme,
 			cursorBlink: true,
 			cursorStyle: "block",
