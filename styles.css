@@ -199,7 +199,6 @@
 	flex: 1;
 	min-height: 0;
 	overflow: hidden;
-	padding: 24px;
 	position: relative;
 }
 
@@ -207,6 +206,7 @@
 .claude-terminal-xterm .xterm {
 	height: 100%;
 	overflow: hidden;
+	padding: 24px 12px 24px 24px;
 }
 
 .claude-terminal-xterm .xterm-screen {
