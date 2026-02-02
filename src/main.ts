@@ -174,9 +174,9 @@ export default class ClaudeTerminalPlugin extends Plugin {
 	addFiles(paths: string[]) {
 		this.ensureTerminal((view) => {
 			const message = paths.length === 1
-				? `Read @${paths[0]}`
-				: `Read these files: ${paths.map((p) => `@${p}`).join(" ")}`;
-			view.sendToTerminal(message);
+				? `Read @${paths[0]} `
+				: `Read these files: ${paths.map((p) => `@${p}`).join(" ")} `;
+			view.typeInTerminal(message);
 		});
 	}
 
@@ -189,7 +189,7 @@ export default class ClaudeTerminalPlugin extends Plugin {
 			// Too large to paste — reference the file instead
 			const loc = lineRange ? ` lines ${lineRange[0]}-${lineRange[1]}` : "";
 			this.ensureTerminal((view) => {
-				view.sendToTerminal(`Read @${sourcePath}${loc}`);
+				view.typeInTerminal(`Read @${sourcePath}${loc} `);
 			});
 			return;
 		}
@@ -197,13 +197,13 @@ export default class ClaudeTerminalPlugin extends Plugin {
 		let message = "";
 		if (sourcePath) {
 			const loc = lineRange ? ` (lines ${lineRange[0]}-${lineRange[1]})` : "";
-			message = `From ${sourcePath}${loc}:\n\n${text}`;
+			message = `From ${sourcePath}${loc}:\n\n${text} `;
 		} else {
-			message = text;
+			message = `${text} `;
 		}
 
 		this.ensureTerminal((view) => {
-			view.sendToTerminal(message);
+			view.typeInTerminal(message);
 		});
 	}
 

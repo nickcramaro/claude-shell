@@ -116,8 +116,8 @@ export class TerminalView extends ItemView {
 		this.terminal = new Terminal({
 			fontSize: settings.fontSize,
 			fontFamily: terminalFont,
-			fontWeight: "300",
-			fontWeightBold: "normal",
+			fontWeight: "100",
+			fontWeightBold: "200",
 			theme,
 			cursorBlink: true,
 			cursorStyle: "block",
@@ -297,6 +297,10 @@ export class TerminalView extends ItemView {
 
 	sendToTerminal(command: string) {
 		this.ptyManager?.sendCommand(command);
+	}
+
+	typeInTerminal(text: string) {
+		this.ptyManager?.sendText(text);
 	}
 
 	focusTerminal() {

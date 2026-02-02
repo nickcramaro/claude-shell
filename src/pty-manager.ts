@@ -108,6 +108,10 @@ export class PtyManager {
 	sendCommand(cmd: string) {
 		this.write(cmd + "\r");
 	}
+
+	sendText(text: string) {
+		this.write(text);
+	}
 }
 
 // --- PATH resolution ---
