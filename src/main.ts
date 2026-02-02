@@ -24,8 +24,12 @@ export default class ClaudeTerminalPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		// Resolve user PATH asynchronously once at startup (cached for all terminals)
-		this.resolvedPath = await resolveUserPath(this.settings.shellPath || undefined);
+		// Resolve user PATH at startup — must not throw or plugin won't load
+		try {
+			this.resolvedPath = resolveUserPath(this.settings.shellPath || undefined);
+		} catch (e) {
+			console.error("obsidian-shell: failed to resolve PATH", e);
+		}
 
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
 

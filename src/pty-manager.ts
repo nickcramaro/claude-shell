@@ -115,23 +115,39 @@ export class PtyManager {
 let cachedUserPath: string | null = null;
 
 /**
- * Resolve the user's full PATH asynchronously by querying their login shell.
+ * Resolve the user's full PATH by querying their login shell.
+ * Uses execFileSync with a short timeout — no -i flag to avoid hangs.
  * Result is cached — subsequent calls return immediately.
  */
-export async function resolveUserPath(shellOverride?: string): Promise<string> {
+export function resolveUserPath(shellOverride?: string): string {
 	if (cachedUserPath) return cachedUserPath;
 
 	const shell = shellOverride || detectShell();
 	try {
-		const { execFile } = require("child_process");
-		const { promisify } = require("util");
-		const execFileAsync = promisify(execFile);
-		// Use -l (login) only — no -i (interactive) to avoid prompts/hangs
-		const { stdout } = await execFileAsync(shell, ["-l", "-c", "echo $PATH"], {
-			timeout: 3000,
+		const { execFileSync } = require("child_process");
+		const env = { HOME: process.env.HOME, USER: process.env.USER };
+		// Prefer interactive login to capture PATH from ~/.zshrc or similar.
+		// If it hangs or fails, fall back to non-interactive login.
+		const interactive = (execFileSync(shell, ["-l", "-i", "-c", "echo $PATH"], {
+			timeout: 2000,
+			encoding: "utf8",
+			env,
+		}) as string).trim();
+		if (interactive) {
+			cachedUserPath = interactive;
+			return interactive;
+		}
+	} catch {
+		// Fall through to non-interactive login
+	}
+
+	try {
+		const { execFileSync } = require("child_process");
+		const result = (execFileSync(shell, ["-l", "-c", "echo $PATH"], {
+			timeout: 2000,
+			encoding: "utf8",
 			env: { HOME: process.env.HOME, USER: process.env.USER },
-		});
-		const result = (stdout as string).trim();
+		}) as string).trim();
 		if (result) {
 			cachedUserPath = result;
 			return result;

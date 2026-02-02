@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
 	resolveUserPath,
 	clearPathCache,
@@ -54,97 +54,88 @@ describe("buildFallbackPath", () => {
 });
 
 describe("resolveUserPath", () => {
-	let mockExecFile: ReturnType<typeof vi.fn>;
+	let mockExecFileSync: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
 		clearPathCache();
-		// Mock the child_process module that resolveUserPath requires at runtime
-		mockExecFile = vi.fn();
+		mockExecFileSync = vi.fn();
 		const childProcess = require("child_process");
-		childProcess.execFile = mockExecFile;
+		childProcess.execFileSync = mockExecFileSync;
 	});
 
-	it("queries the shell and caches result", async () => {
-		mockExecFile.mockImplementation(
-			(_bin: string, _args: string[], _opts: any, cb: Function) => {
-				cb(null, { stdout: "/resolved/path:/usr/bin\n" });
-			}
-		);
+	it("queries the shell and returns result", () => {
+		mockExecFileSync.mockReturnValue("/resolved/path:/usr/bin\n");
 
-		const result = await resolveUserPath("/bin/zsh");
+		const result = resolveUserPath("/bin/zsh");
 		expect(result).toBe("/resolved/path:/usr/bin");
-
-		// Second call should use cache
-		clearPathCache(); // clear so we can test fresh
 	});
 
-	it("caches and returns same result on second call", async () => {
+	it("caches and returns same result on second call", () => {
 		let callCount = 0;
-		mockExecFile.mockImplementation(
-			(_bin: string, _args: string[], _opts: any, cb: Function) => {
-				callCount++;
-				cb(null, { stdout: "/cached/path" });
-			}
-		);
+		mockExecFileSync.mockImplementation(() => {
+			callCount++;
+			return "/cached/path";
+		});
 
-		const first = await resolveUserPath("/bin/zsh");
-		const second = await resolveUserPath("/bin/zsh");
+		const first = resolveUserPath("/bin/zsh");
+		const second = resolveUserPath("/bin/zsh");
 		expect(first).toBe("/cached/path");
 		expect(second).toBe("/cached/path");
 		expect(callCount).toBe(1);
 	});
 
-	it("falls back to buildFallbackPath on exec failure", async () => {
-		mockExecFile.mockImplementation(
-			(_bin: string, _args: string[], _opts: any, cb: Function) => {
-				cb(new Error("timeout"));
-			}
-		);
+	it("prefers interactive login shell", () => {
+		mockExecFileSync.mockReturnValue("/some/path");
 
-		const result = await resolveUserPath("/bin/zsh");
+		resolveUserPath("/bin/zsh");
+		expect(mockExecFileSync).toHaveBeenCalledWith(
+			"/bin/zsh",
+			["-l", "-i", "-c", "echo $PATH"],
+			expect.objectContaining({ timeout: 2000, encoding: "utf8" }),
+		);
+	});
+
+	it("falls back to non-interactive login on interactive failure", () => {
+		mockExecFileSync
+			.mockImplementationOnce(() => {
+				throw new Error("timeout");
+			})
+			.mockReturnValueOnce("/fallback/path");
+
+		const result = resolveUserPath("/bin/zsh");
+		expect(result).toBe("/fallback/path");
+		expect(mockExecFileSync).toHaveBeenNthCalledWith(
+			2,
+			"/bin/zsh",
+			["-l", "-c", "echo $PATH"],
+			expect.objectContaining({ timeout: 2000, encoding: "utf8" }),
+		);
+	});
+
+	it("falls back to buildFallbackPath when both shell queries fail", () => {
+		mockExecFileSync.mockImplementation(() => {
+			throw new Error("timeout");
+		});
+
+		const result = resolveUserPath("/bin/zsh");
 		expect(result).toContain("/usr/local/bin");
 	});
 
-	it("falls back when exec returns empty stdout", async () => {
-		mockExecFile.mockImplementation(
-			(_bin: string, _args: string[], _opts: any, cb: Function) => {
-				cb(null, { stdout: "  \n" });
-			}
-		);
+	it("falls back when interactive returns empty stdout", () => {
+		mockExecFileSync.mockReturnValue("  \n");
 
-		const result = await resolveUserPath("/bin/zsh");
+		const result = resolveUserPath("/bin/zsh");
 		expect(result).toContain("/usr/local/bin");
 	});
 
-	it("uses -l flag without -i", async () => {
-		mockExecFile.mockImplementation(
-			(_bin: string, args: string[], _opts: any, cb: Function) => {
-				expect(args).toEqual(["-l", "-c", "echo $PATH"]);
-				cb(null, { stdout: "/some/path" });
-			}
-		);
-
-		await resolveUserPath("/bin/zsh");
-	});
-
-	it("clearPathCache allows re-resolution", async () => {
-		mockExecFile.mockImplementation(
-			(_bin: string, _args: string[], _opts: any, cb: Function) => {
-				cb(null, { stdout: "/first/path" });
-			}
-		);
-
-		const first = await resolveUserPath("/bin/zsh");
+	it("clearPathCache allows re-resolution", () => {
+		mockExecFileSync.mockReturnValue("/first/path");
+		const first = resolveUserPath("/bin/zsh");
 		expect(first).toBe("/first/path");
 
 		clearPathCache();
-		mockExecFile.mockImplementation(
-			(_bin: string, _args: string[], _opts: any, cb: Function) => {
-				cb(null, { stdout: "/second/path" });
-			}
-		);
-
-		const second = await resolveUserPath("/bin/zsh");
+		mockExecFileSync.mockReturnValue("/second/path");
+		const second = resolveUserPath("/bin/zsh");
 		expect(second).toBe("/second/path");
 	});
 });
