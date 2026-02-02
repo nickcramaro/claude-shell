@@ -97,9 +97,18 @@ export class TerminalView extends ItemView {
 			brightWhite: cv("--color-base-100") || "#ffffff",
 		};
 
+		// Resolve Obsidian's monospace font by probing a temporary element
+		// that uses the same CSS variable chain Obsidian applies to code blocks.
+		const probe = document.body.createEl("span", {
+			attr: { style: "font-family: var(--font-monospace, var(--font-monospace-default)); position: absolute; visibility: hidden;" },
+		});
+		const monospaceFont =
+			getComputedStyle(probe).fontFamily || "Menlo, monospace";
+		probe.remove();
+
 		this.terminal = new Terminal({
 			fontSize: settings.fontSize,
-			fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
+			fontFamily: monospaceFont,
 			theme,
 			cursorBlink: true,
 			cursorStyle: "block",
